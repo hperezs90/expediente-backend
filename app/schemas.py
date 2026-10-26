@@ -167,6 +167,7 @@ class TramiteDashboardOut(BaseModel):
     categoria: str
     numero_expediente: Optional[str] = None
     descripcion: Optional[str] = None
+    renovado: bool = False  # ya existe un trámite que lo renueva
     fecha_vencimiento: Optional[date] = None
     estado: str
     creado_por_nombre: Optional[str] = None
@@ -267,6 +268,8 @@ class TramiteEmpresaOut(BaseModel):
     resolucion_final: Optional[str] = None
     fecha_aprobacion: Optional[date] = None
     etapas_fechas: Dict[str, Optional[date]] = {}
+    renueva_a_id: Optional[UUID] = None
+    renovado_por_id: Optional[UUID] = None
     anticipo: Optional[str] = None
     complemento: Optional[str] = None
     descripcion: Optional[str] = None
@@ -276,6 +279,10 @@ class TramiteEmpresaOut(BaseModel):
     estatus_calculado: Optional[str] = None
 
 
+class RenovarTramite(BaseModel):
+    fecha_inicio: Optional[date] = None  # por defecto, hoy
+
+
 class ConfigPublica(BaseModel):
     app_name: str
     tagline: str
@@ -283,6 +290,8 @@ class ConfigPublica(BaseModel):
     logo_url: str
     inactividad_minutos: int
     plazo_observacion_meses: int
+    ventana_renovacion_dias: int
+    dominio_base: str = ""
 
 
 class IntentoLoginOut(BaseModel):

@@ -10,18 +10,21 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import asc, func
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from . import config, models, schemas, auth, storage
-from .database import engine, get_db, Base
+from . import config, models, schemas, auth, storage, tenants
+from .tenancy import TenantInfo, get_db, obtener_tenant, obtener_tenant_opcional
+from .limites import limiter, obtener_ip_real
+from .plataforma import router as plataforma_router
 from .alertas_job import ejecutar_revision_alertas
 
-# Crea las tablas si no existen (para desarrollo; en producción usar Alembic)
-Base.metadata.create_all(bind=engine)
+# Las tablas de cada empresa se crean al provisionarla (python -m app.tenants crear); aquí solo el registro de empresas.
+tenants.asegurar_tablas_control()
+tenants.asegurar_admin_inicial()
 
 app = FastAPI(title="Expediente API")
 
@@ -35,18 +38,10 @@ app.add_middleware(
 )
 
 
-def obtener_ip_real(request: Request) -> str:
-    """Render/Cloudflare pasan la IP real del visitante en X-Forwarded-For."""
-    reenviada = request.headers.get("x-forwarded-for")
-    if reenviada:
-        return reenviada.split(",")[0].strip()
-    return request.client.host if request.client else "desconocido"
-
-
-limiter = Limiter(key_func=obtener_ip_real, default_limits=["100/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+app.include_router(plataforma_router)
 
 
 def empresas_asignadas_ids(db: Session, usuario_id) -> list:
@@ -115,6 +110,41 @@ def fecha_vencimiento_desde(tipo: models.TipoTramite, base: date) -> date | None
     return base + relativedelta(months=tipo.vigencia_meses)
 
 
+def crear_renovacion(db: Session, original: models.Tramite, usuario: models.Usuario, fecha_inicio: date | None = None) -> models.Tramite:
+    """Crea el trámite que renueva (o continúa) a `original`: misma empresa, tipo, gestor y datos de identificación,
+    con checklist nuevo y sin documentos, observaciones ni número de expediente (es una gestión nueva)."""
+    tipo = original.tipo_tramite
+    inicio = fecha_inicio or date.today()
+    nuevo = models.Tramite(
+        empresa_cliente_id=original.empresa_cliente_id,
+        tipo_tramite_id=tipo.id,
+        asignado_a=original.asignado_a,
+        creado_por_id=usuario.id,
+        fecha_inicio=inicio,
+        descripcion=original.descripcion,
+        numero_registro=original.numero_registro,
+        renueva_a_id=original.id,
+        checklist=[{"item": doc, "completado": False} for doc in (tipo.checklist_default or [])],
+    )
+    if tipo.vigencia_desde == "inicio":
+        nuevo.fecha_vencimiento = fecha_vencimiento_desde(tipo, inicio)
+    db.add(nuevo)
+    db.flush()
+
+    for tramite_id, texto in ((nuevo.id, f"Renovación de un trámite anterior (inicio {inicio})"), (original.id, "Renovación iniciada")):
+        db.add(models.AuditoriaTramite(
+            tramite_id=tramite_id,
+            empresa_id=original.empresa_cliente_id,
+            empresa_nombre=original.empresa_cliente.nombre,
+            tramite_nombre=tipo.nombre,
+            usuario_id=usuario.id,
+            campo="renovacion",
+            valor_anterior=None,
+            valor_nuevo=texto,
+        ))
+    return nuevo
+
+
 def construir_tramite_out(t: models.Tramite) -> schemas.TramiteEmpresaOut:
     return schemas.TramiteEmpresaOut(
         id=t.id,
@@ -134,6 +164,8 @@ def construir_tramite_out(t: models.Tramite) -> schemas.TramiteEmpresaOut:
         resolucion_final=t.resolucion_final,
         fecha_aprobacion=t.fecha_aprobacion,
         etapas_fechas=t.etapas_fechas or {},
+        renueva_a_id=t.renueva_a_id,
+        renovado_por_id=t.renovaciones[0].id if t.renovaciones else None,
         anticipo=t.anticipo,
         complemento=t.complemento,
         descripcion=t.descripcion,
@@ -166,6 +198,7 @@ def construir_dashboard_out(t: models.Tramite) -> schemas.TramiteDashboardOut:
         categoria=t.tipo_tramite.categoria,
         numero_expediente=t.numero_expediente,
         descripcion=t.descripcion,
+        renovado=bool(t.renovaciones),
         fecha_vencimiento=t.fecha_vencimiento,
         estado=t.estado,
         creado_por_nombre=t.creado_por.nombre if t.creado_por else None,
@@ -182,6 +215,7 @@ TRAMITE_JOINS = (
     joinedload(models.Tramite.asignado_a_usuario),
     joinedload(models.Tramite.empresa_cliente),
     joinedload(models.Tramite.observaciones),
+    selectinload(models.Tramite.renovaciones),
     joinedload(models.Tramite.documentos).joinedload(models.Documento.subido_por),
 )
 
@@ -192,27 +226,38 @@ def health():
 
 
 @app.get("/config", response_model=schemas.ConfigPublica)
-def configuracion_publica():
-    """Identidad visual y parámetros que el frontend necesita antes de iniciar sesión."""
+def configuracion_publica(tenant: TenantInfo | None = Depends(obtener_tenant_opcional)):
+    """Identidad visual y parámetros que el frontend necesita antes de iniciar sesión.
+    Cada empresa puede tener su propia marca; lo que no defina usa los valores de la instalación."""
     return schemas.ConfigPublica(
-        app_name=config.APP_NAME,
-        tagline=config.APP_TAGLINE,
-        primary_color=config.APP_PRIMARY_COLOR,
-        logo_url=config.APP_LOGO_URL,
+        app_name=(tenant and tenant.nombre_app) or config.APP_NAME,
+        tagline=(tenant and tenant.eslogan) or config.APP_TAGLINE,
+        primary_color=(tenant and tenant.color_primario) or config.APP_PRIMARY_COLOR,
+        logo_url=(tenant and tenant.logo_url) or config.APP_LOGO_URL,
         inactividad_minutos=config.INACTIVIDAD_MINUTOS,
         plazo_observacion_meses=config.PLAZO_OBSERVACION_MESES,
+        ventana_renovacion_dias=config.VENTANA_RENOVACION_DIAS,
+        dominio_base=config.BASE_DOMAIN,
     )
 
 
 @app.post("/admin/enviar-alertas")
-def enviar_alertas_manual(current_user: models.Usuario = Depends(auth.require_admin)):
-    return ejecutar_revision_alertas()
+def enviar_alertas_manual(
+    current_user: models.Usuario = Depends(auth.require_admin),
+    tenant: TenantInfo = Depends(obtener_tenant),
+):
+    return ejecutar_revision_alertas(tenant)
 
 
 # ---------- Autenticación ----------
 @app.post("/auth/login", response_model=schemas.Token)
 @limiter.limit("10/minute")
-def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+    tenant: TenantInfo = Depends(obtener_tenant),
+):
     user = auth.authenticate_user(db, form_data.username, form_data.password)
 
     db.add(
@@ -226,7 +271,7 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
 
     if not user:
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
-    token = auth.create_access_token(data={"sub": str(user.id)})
+    token = auth.create_access_token(data={"sub": str(user.id), "tenant": tenant.subdominio})
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -666,6 +711,7 @@ def buscar_tramites(
             joinedload(models.Tramite.creado_por),
             joinedload(models.Tramite.asignado_a_usuario),
             joinedload(models.Tramite.observaciones),
+            selectinload(models.Tramite.renovaciones),
         )
         .filter(models.Tramite.numero_expediente.ilike(f"%{q}%"))
     )
@@ -711,6 +757,7 @@ def proximos_a_vencer(
         joinedload(models.Tramite.creado_por),
         joinedload(models.Tramite.asignado_a_usuario),
         joinedload(models.Tramite.observaciones),
+        selectinload(models.Tramite.renovaciones),
     )
     if current_user.rol != "admin":
         asignadas = empresas_asignadas_ids(db, current_user.id)
@@ -839,9 +886,57 @@ def editar_tramite(
     for campo, valor in cambios_dict.items():
         setattr(tramite, campo, valor)
 
+    # Trámites recurrentes (informes periódicos, obligaciones anuales): al cerrarse con éxito se crea solo
+    # el siguiente periodo, que arranca cuando vence el actual (o tras la frecuencia indicada en el catálogo).
+    tipo = tramite.tipo_tramite
+    if (
+        cambios_dict.get("resolucion_final") in ("aprobado", "finalizado")
+        and tipo.es_recurrente
+        and not tramite.renovaciones
+    ):
+        siguiente = tramite.fecha_vencimiento
+        if not siguiente and tipo.frecuencia_dias:
+            siguiente = tramite.fecha_inicio + timedelta(days=tipo.frecuencia_dias)
+        if siguiente:
+            crear_renovacion(db, tramite, current_user, fecha_inicio=siguiente)
+
     db.commit()
     db.refresh(tramite)
     return construir_tramite_out(tramite)
+
+
+@app.post("/tramites/{tramite_id}/renovar", response_model=schemas.TramiteEmpresaOut)
+def renovar_tramite(
+    tramite_id: UUID,
+    datos: schemas.RenovarTramite,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(auth.get_current_user),
+):
+    """Renovación en un clic: crea el trámite nuevo a partir del actual y marca el actual como 'renovación en curso'."""
+    original = _cargar_tramite_con_joins(db, tramite_id)
+    if not original:
+        raise HTTPException(status_code=404, detail="Trámite no encontrado")
+    verificar_acceso_empresa(db, current_user, original.empresa_cliente_id)
+    if original.renovaciones:
+        raise HTTPException(status_code=400, detail="Este trámite ya tiene una renovación creada")
+    if original.resolucion_final == "rechazado":
+        raise HTTPException(status_code=400, detail="Un trámite rechazado no se renueva; crea uno nuevo")
+
+    nuevo = crear_renovacion(db, original, current_user, fecha_inicio=datos.fecha_inicio)
+    if original.estado != "renovacion_en_curso":
+        db.add(models.AuditoriaTramite(
+            tramite_id=original.id,
+            empresa_id=original.empresa_cliente_id,
+            empresa_nombre=original.empresa_cliente.nombre,
+            tramite_nombre=original.tipo_tramite.nombre,
+            usuario_id=current_user.id,
+            campo="estado",
+            valor_anterior=original.estado,
+            valor_nuevo="renovacion_en_curso",
+        ))
+        original.estado = "renovacion_en_curso"
+    db.commit()
+    return construir_tramite_out(_cargar_tramite_con_joins(db, nuevo.id))
 
 
 @app.get("/empresas/{empresa_id}/auditoria", response_model=List[schemas.AuditoriaOut])
@@ -1002,6 +1097,7 @@ def subir_documento(
     observacion_id: str = "",
     db: Session = Depends(get_db),
     current_user: models.Usuario = Depends(auth.get_current_user),
+    tenant: TenantInfo = Depends(obtener_tenant),
 ):
     if tipo not in ("ingreso", "resolucion", "observacion", "otro"):
         raise HTTPException(status_code=400, detail="Tipo de documento inválido")
@@ -1022,7 +1118,7 @@ def subir_documento(
         raise HTTPException(status_code=400, detail=error)
 
     try:
-        clave = storage.subir_archivo(contenido, archivo.filename, archivo.content_type)
+        clave = storage.subir_archivo(contenido, archivo.filename, archivo.content_type, prefijo=tenant.subdominio)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 

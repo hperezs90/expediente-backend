@@ -5,7 +5,7 @@ from sqlalchemy import (
     Column, String, Boolean, Integer, Date, DateTime, ForeignKey, Text, JSON, CheckConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 
 from .database import Base
 
@@ -96,6 +96,9 @@ class Tramite(Base):
     fecha_aprobacion = Column(Date, nullable=True)            # fecha real de aprobación; si el tipo cuenta la vigencia desde aquí, el vencimiento se calcula de esta fecha
     etapas_fechas = Column(JSON, default=dict)                # {nombre_etapa: "YYYY-MM-DD"}, según las etapas definidas en el tipo de trámite
 
+    # Si este trámite es la renovación (o el siguiente periodo) de otro, apunta al original
+    renueva_a_id = Column(UUID(as_uuid=True), ForeignKey("tramite.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Identifica de qué se trata (producto, sede, equipo, etc.)
     descripcion = Column(Text, nullable=True)
     numero_registro = Column(String(100), nullable=True)  # número final de registro/licencia/resolución (no el de expediente de seguimiento)
@@ -114,6 +117,7 @@ class Tramite(Base):
     asignado_a_usuario = relationship("Usuario", foreign_keys=[asignado_a])
     observaciones = relationship("Observacion", back_populates="tramite", order_by="Observacion.numero", cascade="all, delete-orphan")
     documentos = relationship("Documento", order_by="Documento.creado_en.desc()", cascade="all, delete-orphan")
+    renovaciones = relationship("Tramite", foreign_keys=[renueva_a_id], backref=backref("renueva_a", remote_side=[id]))
 
 
 class Observacion(Base):
