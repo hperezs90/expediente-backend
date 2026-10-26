@@ -12,10 +12,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, TypeAdapter, field_validator
 from sqlalchemy import text
 
-from . import auth, config, models, tenancy, tenants
+from . import auth, config, emailing, models, tenancy, tenants
 from .control import AdminPlataforma, Tenant
 from .database import SessionLocal, engine, sesion_tenant
 from .limites import limiter
@@ -47,6 +47,19 @@ def requerir_plataforma(
             finally:
                 db.close()
     raise HTTPException(status_code=401, detail="Sesión de plataforma no válida")
+
+
+_validador_correo = TypeAdapter(EmailStr)
+
+
+def _validar_lista_correos(valor):
+    """Acepta vacío (volver al valor por defecto) o uno o varios correos válidos separados por coma."""
+    if not valor:
+        return valor
+    correos = emailing.lista_correos(valor)
+    for c in correos:
+        _validador_correo.validate_python(c)
+    return ", ".join(correos)
 
 
 class TokenPlataforma(BaseModel):
@@ -82,7 +95,9 @@ class EmpresaCrear(BaseModel):
     logo_url: Optional[str] = None
     eslogan: Optional[str] = None
     nombre_app: Optional[str] = None
-    correo_alertas: Optional[EmailStr] = None
+    correo_alertas: Optional[str] = None  # uno o varios correos separados por coma
+
+    _validar_correos = field_validator("correo_alertas")(lambda v: _validar_lista_correos(v))
 
 
 class EmpresaEditar(BaseModel):
@@ -92,7 +107,9 @@ class EmpresaEditar(BaseModel):
     eslogan: Optional[str] = None
     color_primario: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
     logo_url: Optional[str] = None
-    correo_alertas: Optional[EmailStr] = None
+    correo_alertas: Optional[str] = None
+
+    _validar_correos = field_validator("correo_alertas")(lambda v: _validar_lista_correos(v))
 
 
 class EmpresaOut(BaseModel):
@@ -195,3 +212,23 @@ def restablecer_password(subdominio: str, datos: ResetPassword):
     finally:
         sesion.close()
     return {"status": "ok"}
+
+
+@router.post("/empresas/{subdominio}/correo-prueba", dependencies=[Depends(requerir_plataforma)])
+def enviar_correo_prueba(subdominio: str):
+    """Manda un correo de prueba al correo de alertas de la empresa, para comprobar Resend y el remitente."""
+    t = tenancy.buscar_tenant(subdominio.lower())
+    if not t:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada o inactiva")
+    destinatarios = emailing.lista_correos(t.correo_alertas) or emailing.lista_correos(os.getenv("CORREO_UNICO_ALERTAS", ""))
+    nombre_app = t.nombre_app or config.APP_NAME
+    ok, error = emailing.enviar_correo_detallado(
+        destinatarios,
+        f"Correo de prueba — {nombre_app}",
+        f"<p>Este es un correo de prueba de <strong>{nombre_app}</strong> para <strong>{t.nombre}</strong>. "
+        "Si lo recibes, las alertas por correo están bien configuradas.</p>",
+        nombre_app,
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail=error)
+    return {"enviado_a": destinatarios, "remitente": emailing.remitente(nombre_app)}

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from . import config, models
 from .database import sesion_tenant
 from .tenancy import TenantInfo, listar_tenants
-from .emailing import enviar_correo
+from .emailing import enviar_correo, lista_correos
 
 # Umbrales de alerta (configurables en config.py / variables de entorno), de mayor a menor.
 # Cada uno define el TECHO de una banda: banda(90) = faltan entre 61 y 90 días; banda(60) = entre 31 y 60; etc.
@@ -36,9 +36,9 @@ def banda_para(dias_restantes: int, umbrales: list) -> int | None:
 def destinatarios_para_empresa(db: Session, empresa_id, correo_alertas: str | None = None) -> list:
     """Todas las alertas van a un único correo fijo (no se reparten por gestor asignado):
     el de la empresa (tenant) o, si no tiene, el de la instalación."""
-    correo = correo_alertas or CORREO_UNICO_ALERTAS
-    if correo:
-        return [correo]
+    correos = lista_correos(correo_alertas) or lista_correos(CORREO_UNICO_ALERTAS)
+    if correos:
+        return correos
 
     # Respaldo por si no se configuró la variable de entorno: manda a los admins.
     admins = db.query(models.Usuario.email).filter(models.Usuario.rol == "admin").filter(models.Usuario.activo.is_(True)).all()
@@ -74,7 +74,15 @@ def registrar_envio(db: Session, tramite_id, banda: int, fecha_vencimiento: date
     db.commit()
 
 
-def construir_html(empresa_nombre, tramite_nombre, categoria, numero_expediente, fecha_vencimiento, dias_restantes, banda, nombre_app):
+def enlace_html(url: str) -> str:
+    return f'<p><a href="{url}">Abrir en el sistema</a></p>' if url else ""
+
+
+def url_del_sistema(tenant: TenantInfo) -> str:
+    return f"https://{tenant.subdominio}.{config.BASE_DOMAIN}" if config.BASE_DOMAIN else ""
+
+
+def construir_html(empresa_nombre, tramite_nombre, categoria, numero_expediente, fecha_vencimiento, dias_restantes, banda, nombre_app, url_sistema=""):
     return f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
       <h2 style="color:#182821;">Vencimiento próximo (banda de {banda} días)</h2>
@@ -82,6 +90,7 @@ def construir_html(empresa_nombre, tramite_nombre, categoria, numero_expediente,
       <p><strong>Trámite:</strong> {tramite_nombre} ({categoria})</p>
       <p><strong>N° expediente:</strong> {numero_expediente or "—"}</p>
       <p><strong>Fecha de vencimiento:</strong> {fecha_vencimiento} (faltan {dias_restantes} días)</p>
+      {enlace_html(url_sistema)}
       <p style="color:#4b5a50; font-size: 13px; margin-top: 24px;">
         Enviado automáticamente por {nombre_app}.
       </p>
@@ -89,7 +98,7 @@ def construir_html(empresa_nombre, tramite_nombre, categoria, numero_expediente,
     """
 
 
-def construir_html_observacion(empresa_nombre, tramite_nombre, categoria, numero_expediente, numero_observacion, motivo, fecha_vencimiento, dias_restantes, banda, nombre_app):
+def construir_html_observacion(empresa_nombre, tramite_nombre, categoria, numero_expediente, numero_observacion, motivo, fecha_vencimiento, dias_restantes, banda, nombre_app, url_sistema=""):
     return f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
       <h2 style="color:#a23328;">Observación N° {numero_observacion} — banda de {banda} días</h2>
@@ -98,6 +107,7 @@ def construir_html_observacion(empresa_nombre, tramite_nombre, categoria, numero
       <p><strong>N° expediente:</strong> {numero_expediente or "—"}</p>
       <p><strong>Motivo:</strong> {motivo or "—"}</p>
       <p><strong>Fecha límite para responder:</strong> {fecha_vencimiento} (faltan {dias_restantes} días)</p>
+      {enlace_html(url_sistema)}
       <p style="color:#4b5a50; font-size: 13px; margin-top: 24px;">
         Enviado automáticamente por {nombre_app}.
       </p>
@@ -146,6 +156,7 @@ def ejecutar_revision_alertas(tenant: TenantInfo) -> dict:
                 dias_restantes,
                 banda,
                 nombre_app,
+                url_del_sistema(tenant),
             )
             ok = enviar_correo(
                 destinatarios,
@@ -194,6 +205,7 @@ def ejecutar_revision_alertas(tenant: TenantInfo) -> dict:
                 dias_restantes,
                 banda,
                 nombre_app,
+                url_del_sistema(tenant),
             )
             ok = enviar_correo(
                 destinatarios,

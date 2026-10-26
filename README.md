@@ -120,11 +120,33 @@ Ver `.env.example`. Lo más relevante:
 - `STORAGE_DIR`: carpeta donde se guardan los documentos (por defecto `uploads`). En Railway, apúntala a un Volume.
 - `B2_*`: opcional; si se definen, los documentos van a S3 / Backblaze B2 en lugar del disco.
 
-## Alertas automáticas
+## Alertas por correo (Resend)
 
-`python -m app.alertas_job` revisa vencimientos y plazos de observaciones y envía los correos que
-correspondan (una vez por banda de días). Recorre todas las empresas activas; prográmalo una vez al día (cron, Railway Cron, etc.),
-o dispáralo a mano para una empresa con `POST /admin/enviar-alertas` como admin.
+Los avisos de vencimiento y de plazos de observaciones se envían por correo con [Resend](https://resend.com).
+
+1. **Crea una cuenta en Resend**, genera una API key y define `RESEND_API_KEY` en el servidor.
+2. **Verifica tu dominio** en Resend (agregas los registros DNS que te indique: SPF y DKIM) y define
+   `ALERT_FROM_EMAIL=alertas@tudominio.com`. El nombre que ve el destinatario es el de cada empresa:
+   `Acme Permisos <alertas@tudominio.com>`. Sin dominio verificado se usa `onboarding@resend.dev`, que en la práctica solo
+   sirve para pruebas: entrega únicamente al correo con el que registraste la cuenta de Resend.
+3. **Define a quién avisar:** en `/plataforma`, al editar una empresa, el campo *Correo(s) para alertas* admite uno o varios
+   correos separados por coma. Si una empresa no tiene, se usa `CORREO_UNICO_ALERTAS` y, de último, los administradores de la empresa.
+4. Pulsa **Enviar correo de prueba** en esa misma pantalla: confirma la API key, el remitente y los destinatarios, y si algo falla
+   muestra el motivo que devuelve Resend (por ejemplo, dominio sin verificar).
+
+Cada correo incluye el trámite, la empresa, la fecha límite y un enlace "Abrir en el sistema" (si `BASE_DOMAIN` está definido).
+Se envía **una sola vez por banda** (por defecto 60, 30 y 15 días antes de vencer; 90, 60, 30 y 10 para observaciones). Si un envío falla,
+se reintenta en la siguiente ejecución. Plan gratuito de Resend: 100 correos al día y 3.000 al mes, con un dominio (consulta los
+límites vigentes en resend.com/pricing).
+
+### Programar la revisión diaria
+
+`python -m app.alertas_job` revisa **todas las empresas activas** y envía lo que corresponda. Debe ejecutarse una vez al día:
+
+- **Railway:** crea un segundo servicio desde el mismo repo, con la misma configuración de variables, comando de inicio
+  `python -m app.alertas_job` y en *Settings → Cron Schedule* por ejemplo `0 13 * * *` (13:00 UTC = 7:00 en Guatemala).
+- Cualquier otro cron (Render Cron Job, cron del servidor, GitHub Actions) sirve igual.
+- A mano, para una sola empresa: `POST /admin/enviar-alertas` como administrador de esa empresa.
 
 ## Despliegue
 
