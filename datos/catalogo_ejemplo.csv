@@ -1,0 +1,11 @@
+categoria,nombre,institucion,tipo_gestion,vigencia_meses,vigencia_desde,etapas,checklist
+legal,Licencia de funcionamiento,Municipalidad,Renovación,12,aprobacion,Preparación|Presentado|En revisión,Formulario de solicitud|Copia de identificación del representante|Comprobante de pago
+legal,Registro mercantil de la empresa,Registro mercantil,Renovación,12,aprobacion,Preparación|Presentado,Escritura constitutiva|Patente de comercio
+ambiental,Permiso ambiental de operación,Autoridad ambiental,Nuevo,60,aprobacion,Preparación|Presentado|En dictamen|Resolución recibida,Estudio de impacto|Plano de la instalación|Comprobante de pago
+ambiental,Informe anual de cumplimiento,Autoridad ambiental,Informe periódico,12,inicio,Preparación|Presentado,Informe firmado|Anexos de monitoreo
+seguridad,Certificado de inspección de bomberos,Cuerpo de bomberos,Renovación,12,aprobacion,Solicitud|Inspección|Emisión,Plan de emergencia|Extintores vigentes
+seguridad,Revisión de salud y seguridad ocupacional,Autoridad laboral,Inspección,24,inicio,,Reglamento interno|Registro de capacitaciones
+sanitario,Licencia sanitaria de establecimiento,Autoridad sanitaria,Renovación,60,aprobacion,Preparación|Firma|Presentado|En análisis,Formulario|Responsable técnico|Comprobante de pago
+sanitario,Registro sanitario de producto,Autoridad sanitaria,Nuevo,60,aprobacion,Preparación|Firma|Presentado|En análisis,Ficha técnica|Etiqueta|Certificado de análisis
+fiscal,Renovación de certificado fiscal,Autoridad tributaria,Renovación,12,aprobacion,Preparación|Presentado,Declaración anual|Estados financieros
+contratos,Renovación de contrato de arrendamiento,Arrendador,Renovación,12,inicio,,Contrato vigente|Prórroga firmada
