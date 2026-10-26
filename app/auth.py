@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from . import models
-from .database import get_db
+from .tenancy import TenantInfo, get_db, obtener_tenant
 
 SECRET_KEY = os.getenv("SECRET_KEY", "cambia-esto-en-produccion")
 ALGORITHM = "HS256"
@@ -50,11 +50,18 @@ credentials_exception = HTTPException(
 )
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.Usuario:
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    tenant: TenantInfo = Depends(obtener_tenant),
+) -> models.Usuario:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
+            raise credentials_exception
+        # Un token solo vale en la empresa donde se emitió
+        if payload.get("tenant") != tenant.subdominio:
             raise credentials_exception
     except JWTError:
         raise credentials_exception

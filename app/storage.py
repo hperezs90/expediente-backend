@@ -64,10 +64,11 @@ def _ruta_local(clave: str) -> str:
     return ruta
 
 
-def subir_archivo(contenido: bytes, nombre_original: str, content_type: str) -> str:
-    """Guarda el archivo y devuelve la clave (key) con la que quedó guardado."""
+def subir_archivo(contenido: bytes, nombre_original: str, content_type: str, prefijo: str = "") -> str:
+    """Guarda el archivo y devuelve la clave (key) con la que quedó guardado.
+    `prefijo` separa los archivos de cada empresa (subdominio) en carpetas distintas."""
     ext = os.path.splitext(nombre_original)[1].lower()
-    clave = f"documentos/{uuid.uuid4()}{ext}"
+    clave = f"documentos/{prefijo}/{uuid.uuid4()}{ext}" if prefijo else f"documentos/{uuid.uuid4()}{ext}"
     if usa_s3():
         _cliente().put_object(
             Bucket=B2_BUCKET_NAME,

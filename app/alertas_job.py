@@ -5,7 +5,8 @@ from datetime import date, datetime
 from sqlalchemy.orm import Session, joinedload
 
 from . import config, models
-from .database import SessionLocal
+from .database import sesion_tenant
+from .tenancy import TenantInfo, listar_tenants
 from .emailing import enviar_correo
 
 # Umbrales de alerta (configurables en config.py / variables de entorno), de mayor a menor.
@@ -32,10 +33,12 @@ def banda_para(dias_restantes: int, umbrales: list) -> int | None:
     return None
 
 
-def destinatarios_para_empresa(db: Session, empresa_id) -> list:
-    """Todas las alertas van a un único correo fijo (no se reparten por gestor asignado)."""
-    if CORREO_UNICO_ALERTAS:
-        return [CORREO_UNICO_ALERTAS]
+def destinatarios_para_empresa(db: Session, empresa_id, correo_alertas: str | None = None) -> list:
+    """Todas las alertas van a un único correo fijo (no se reparten por gestor asignado):
+    el de la empresa (tenant) o, si no tiene, el de la instalación."""
+    correo = correo_alertas or CORREO_UNICO_ALERTAS
+    if correo:
+        return [correo]
 
     # Respaldo por si no se configuró la variable de entorno: manda a los admins.
     admins = db.query(models.Usuario.email).filter(models.Usuario.rol == "admin").filter(models.Usuario.activo.is_(True)).all()
@@ -71,7 +74,7 @@ def registrar_envio(db: Session, tramite_id, banda: int, fecha_vencimiento: date
     db.commit()
 
 
-def construir_html(empresa_nombre, tramite_nombre, categoria, numero_expediente, fecha_vencimiento, dias_restantes, banda):
+def construir_html(empresa_nombre, tramite_nombre, categoria, numero_expediente, fecha_vencimiento, dias_restantes, banda, nombre_app):
     return f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
       <h2 style="color:#182821;">Vencimiento próximo (banda de {banda} días)</h2>
@@ -80,13 +83,13 @@ def construir_html(empresa_nombre, tramite_nombre, categoria, numero_expediente,
       <p><strong>N° expediente:</strong> {numero_expediente or "—"}</p>
       <p><strong>Fecha de vencimiento:</strong> {fecha_vencimiento} (faltan {dias_restantes} días)</p>
       <p style="color:#4b5a50; font-size: 13px; margin-top: 24px;">
-        Enviado automáticamente por {config.APP_NAME}.
+        Enviado automáticamente por {nombre_app}.
       </p>
     </div>
     """
 
 
-def construir_html_observacion(empresa_nombre, tramite_nombre, categoria, numero_expediente, numero_observacion, motivo, fecha_vencimiento, dias_restantes, banda):
+def construir_html_observacion(empresa_nombre, tramite_nombre, categoria, numero_expediente, numero_observacion, motivo, fecha_vencimiento, dias_restantes, banda, nombre_app):
     return f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
       <h2 style="color:#a23328;">Observación N° {numero_observacion} — banda de {banda} días</h2>
@@ -96,14 +99,16 @@ def construir_html_observacion(empresa_nombre, tramite_nombre, categoria, numero
       <p><strong>Motivo:</strong> {motivo or "—"}</p>
       <p><strong>Fecha límite para responder:</strong> {fecha_vencimiento} (faltan {dias_restantes} días)</p>
       <p style="color:#4b5a50; font-size: 13px; margin-top: 24px;">
-        Enviado automáticamente por {config.APP_NAME}.
+        Enviado automáticamente por {nombre_app}.
       </p>
     </div>
     """
 
 
-def ejecutar_revision_alertas() -> dict:
-    db = SessionLocal()
+def ejecutar_revision_alertas(tenant: TenantInfo) -> dict:
+    """Revisa y envía las alertas de UNA empresa (tenant)."""
+    db = sesion_tenant(tenant.esquema)
+    nombre_app = tenant.nombre_app or config.APP_NAME
     enviadas = 0
     revisadas = 0
     hoy = date.today()
@@ -131,7 +136,7 @@ def ejecutar_revision_alertas() -> dict:
             if ya_fue_enviada(db, t.id, banda):
                 continue
 
-            destinatarios = destinatarios_para_empresa(db, t.empresa_cliente_id)
+            destinatarios = destinatarios_para_empresa(db, t.empresa_cliente_id, tenant.correo_alertas)
             html = construir_html(
                 t.empresa_cliente.nombre,
                 t.tipo_tramite.nombre,
@@ -140,11 +145,13 @@ def ejecutar_revision_alertas() -> dict:
                 t.fecha_vencimiento,
                 dias_restantes,
                 banda,
+                nombre_app,
             )
             ok = enviar_correo(
                 destinatarios,
                 f"Vence pronto ({dias_restantes} días): {t.tipo_tramite.nombre} — {t.empresa_cliente.nombre}",
                 html,
+                nombre_app,
             )
             registrar_envio(db, t.id, banda, t.fecha_vencimiento, ok)
             if ok:
@@ -175,7 +182,7 @@ def ejecutar_revision_alertas() -> dict:
                 continue
 
             t = o.tramite
-            destinatarios = destinatarios_para_empresa(db, t.empresa_cliente_id)
+            destinatarios = destinatarios_para_empresa(db, t.empresa_cliente_id, tenant.correo_alertas)
             html = construir_html_observacion(
                 t.empresa_cliente.nombre,
                 t.tipo_tramite.nombre,
@@ -186,11 +193,13 @@ def ejecutar_revision_alertas() -> dict:
                 o.fecha_vencimiento,
                 dias_restantes,
                 banda,
+                nombre_app,
             )
             ok = enviar_correo(
                 destinatarios,
                 f"Observación N° {o.numero} vence pronto ({dias_restantes} días): {t.tipo_tramite.nombre} — {t.empresa_cliente.nombre}",
                 html,
+                nombre_app,
             )
             registrar_envio(db, t.id, banda, o.fecha_vencimiento, ok, observacion_id=o.id)
             if ok:
@@ -201,6 +210,10 @@ def ejecutar_revision_alertas() -> dict:
     return {"revisadas": revisadas, "enviadas": enviadas}
 
 
+def ejecutar_para_todas_las_empresas() -> dict:
+    return {t.subdominio: ejecutar_revision_alertas(t) for t in listar_tenants()}
+
+
 if __name__ == "__main__":
-    resultado = ejecutar_revision_alertas()
+    resultado = ejecutar_para_todas_las_empresas()
     print("Revisión de alertas completada:", resultado)

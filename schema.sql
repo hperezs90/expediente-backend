@@ -1,3 +1,7 @@
+-- Esquema de UNA empresa (tenant). Normalmente no hace falta: 'python -m app.tenants crear' lo crea solo.
+-- Uso manual:  CREATE SCHEMA t_miempresa;  SET search_path TO t_miempresa;  \i schema.sql
+-- (el registro de empresas del esquema public lo crea la propia aplicación al arrancar)
+
 --
 -- PostgreSQL database dump
 --
@@ -12,21 +16,23 @@ SET idle_in_transaction_session_timeout = 0;
 SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
 SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+
 
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: alerta; Type: TABLE; Schema: public; Owner: -
+-- Name: alerta; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.alerta (
+CREATE TABLE alerta (
     id uuid NOT NULL,
     tramite_id uuid NOT NULL,
     observacion_id uuid,
@@ -40,10 +46,10 @@ CREATE TABLE public.alerta (
 
 
 --
--- Name: auditoria_tramite; Type: TABLE; Schema: public; Owner: -
+-- Name: auditoria_tramite; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.auditoria_tramite (
+CREATE TABLE auditoria_tramite (
     id uuid NOT NULL,
     tramite_id uuid NOT NULL,
     empresa_id uuid,
@@ -58,10 +64,10 @@ CREATE TABLE public.auditoria_tramite (
 
 
 --
--- Name: documento; Type: TABLE; Schema: public; Owner: -
+-- Name: documento; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.documento (
+CREATE TABLE documento (
     id uuid NOT NULL,
     tramite_id uuid NOT NULL,
     observacion_id uuid,
@@ -77,10 +83,10 @@ CREATE TABLE public.documento (
 
 
 --
--- Name: empresa_cliente; Type: TABLE; Schema: public; Owner: -
+-- Name: empresa_cliente; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.empresa_cliente (
+CREATE TABLE empresa_cliente (
     id uuid NOT NULL,
     organizacion_id uuid NOT NULL,
     nombre character varying(250) NOT NULL,
@@ -94,10 +100,10 @@ CREATE TABLE public.empresa_cliente (
 
 
 --
--- Name: intento_login; Type: TABLE; Schema: public; Owner: -
+-- Name: intento_login; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.intento_login (
+CREATE TABLE intento_login (
     id uuid NOT NULL,
     email_intentado character varying(200) NOT NULL,
     ip character varying(64),
@@ -107,10 +113,10 @@ CREATE TABLE public.intento_login (
 
 
 --
--- Name: observacion; Type: TABLE; Schema: public; Owner: -
+-- Name: observacion; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.observacion (
+CREATE TABLE observacion (
     id uuid NOT NULL,
     tramite_id uuid NOT NULL,
     numero integer NOT NULL,
@@ -123,10 +129,10 @@ CREATE TABLE public.observacion (
 
 
 --
--- Name: organizacion; Type: TABLE; Schema: public; Owner: -
+-- Name: organizacion; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.organizacion (
+CREATE TABLE organizacion (
     id uuid NOT NULL,
     nombre character varying(200) NOT NULL,
     creado_en timestamp with time zone
@@ -134,10 +140,10 @@ CREATE TABLE public.organizacion (
 
 
 --
--- Name: tipo_tramite; Type: TABLE; Schema: public; Owner: -
+-- Name: tipo_tramite; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.tipo_tramite (
+CREATE TABLE tipo_tramite (
     id uuid NOT NULL,
     categoria character varying(50) NOT NULL,
     nombre character varying(250) NOT NULL,
@@ -155,10 +161,10 @@ CREATE TABLE public.tipo_tramite (
 
 
 --
--- Name: tramite; Type: TABLE; Schema: public; Owner: -
+-- Name: tramite; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.tramite (
+CREATE TABLE tramite (
     id uuid NOT NULL,
     empresa_cliente_id uuid NOT NULL,
     tipo_tramite_id uuid NOT NULL,
@@ -173,6 +179,7 @@ CREATE TABLE public.tramite (
     resolucion_final character varying(20),
     fecha_aprobacion date,
     etapas_fechas json,
+    renueva_a_id uuid,
     descripcion text,
     numero_registro character varying(100),
     anticipo text,
@@ -184,10 +191,10 @@ CREATE TABLE public.tramite (
 
 
 --
--- Name: usuario; Type: TABLE; Schema: public; Owner: -
+-- Name: usuario; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.usuario (
+CREATE TABLE usuario (
     id uuid NOT NULL,
     organizacion_id uuid NOT NULL,
     nombre character varying(150) NOT NULL,
@@ -201,229 +208,244 @@ CREATE TABLE public.usuario (
 
 
 --
--- Name: usuario_empresa_cliente; Type: TABLE; Schema: public; Owner: -
+-- Name: usuario_empresa_cliente; Type: TABLE; Schema: t_beta_co; Owner: -
 --
 
-CREATE TABLE public.usuario_empresa_cliente (
+CREATE TABLE usuario_empresa_cliente (
     usuario_id uuid NOT NULL,
     empresa_cliente_id uuid NOT NULL
 );
 
 
 --
--- Name: alerta alerta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: alerta alerta_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.alerta
+ALTER TABLE ONLY alerta
     ADD CONSTRAINT alerta_pkey PRIMARY KEY (id);
 
 
 --
--- Name: auditoria_tramite auditoria_tramite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: auditoria_tramite auditoria_tramite_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.auditoria_tramite
+ALTER TABLE ONLY auditoria_tramite
     ADD CONSTRAINT auditoria_tramite_pkey PRIMARY KEY (id);
 
 
 --
--- Name: documento documento_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: documento documento_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.documento
+ALTER TABLE ONLY documento
     ADD CONSTRAINT documento_pkey PRIMARY KEY (id);
 
 
 --
--- Name: empresa_cliente empresa_cliente_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: empresa_cliente empresa_cliente_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.empresa_cliente
+ALTER TABLE ONLY empresa_cliente
     ADD CONSTRAINT empresa_cliente_pkey PRIMARY KEY (id);
 
 
 --
--- Name: intento_login intento_login_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: intento_login intento_login_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.intento_login
+ALTER TABLE ONLY intento_login
     ADD CONSTRAINT intento_login_pkey PRIMARY KEY (id);
 
 
 --
--- Name: observacion observacion_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: observacion observacion_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.observacion
+ALTER TABLE ONLY observacion
     ADD CONSTRAINT observacion_pkey PRIMARY KEY (id);
 
 
 --
--- Name: organizacion organizacion_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: organizacion organizacion_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.organizacion
+ALTER TABLE ONLY organizacion
     ADD CONSTRAINT organizacion_pkey PRIMARY KEY (id);
 
 
 --
--- Name: tipo_tramite tipo_tramite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: tipo_tramite tipo_tramite_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.tipo_tramite
+ALTER TABLE ONLY tipo_tramite
     ADD CONSTRAINT tipo_tramite_pkey PRIMARY KEY (id);
 
 
 --
--- Name: tramite tramite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: tramite tramite_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.tramite
+ALTER TABLE ONLY tramite
     ADD CONSTRAINT tramite_pkey PRIMARY KEY (id);
 
 
 --
--- Name: usuario usuario_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: usuario usuario_email_key; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.usuario
+ALTER TABLE ONLY usuario
     ADD CONSTRAINT usuario_email_key UNIQUE (email);
 
 
 --
--- Name: usuario_empresa_cliente usuario_empresa_cliente_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: usuario_empresa_cliente usuario_empresa_cliente_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.usuario_empresa_cliente
+ALTER TABLE ONLY usuario_empresa_cliente
     ADD CONSTRAINT usuario_empresa_cliente_pkey PRIMARY KEY (usuario_id, empresa_cliente_id);
 
 
 --
--- Name: usuario usuario_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: usuario usuario_pkey; Type: CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.usuario
+ALTER TABLE ONLY usuario
     ADD CONSTRAINT usuario_pkey PRIMARY KEY (id);
 
 
 --
--- Name: alerta alerta_observacion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: ix_tramite_renueva_a_id; Type: INDEX; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.alerta
-    ADD CONSTRAINT alerta_observacion_id_fkey FOREIGN KEY (observacion_id) REFERENCES public.observacion(id) ON DELETE CASCADE;
-
-
---
--- Name: alerta alerta_tramite_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.alerta
-    ADD CONSTRAINT alerta_tramite_id_fkey FOREIGN KEY (tramite_id) REFERENCES public.tramite(id);
+CREATE INDEX ix_tramite_renueva_a_id ON tramite USING btree (renueva_a_id);
 
 
 --
--- Name: auditoria_tramite auditoria_tramite_usuario_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: alerta alerta_observacion_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.auditoria_tramite
-    ADD CONSTRAINT auditoria_tramite_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuario(id);
-
-
---
--- Name: documento documento_observacion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.documento
-    ADD CONSTRAINT documento_observacion_id_fkey FOREIGN KEY (observacion_id) REFERENCES public.observacion(id) ON DELETE CASCADE;
+ALTER TABLE ONLY alerta
+    ADD CONSTRAINT alerta_observacion_id_fkey FOREIGN KEY (observacion_id) REFERENCES observacion(id) ON DELETE CASCADE;
 
 
 --
--- Name: documento documento_subido_por_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: alerta alerta_tramite_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.documento
-    ADD CONSTRAINT documento_subido_por_id_fkey FOREIGN KEY (subido_por_id) REFERENCES public.usuario(id);
-
-
---
--- Name: documento documento_tramite_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.documento
-    ADD CONSTRAINT documento_tramite_id_fkey FOREIGN KEY (tramite_id) REFERENCES public.tramite(id) ON DELETE CASCADE;
+ALTER TABLE ONLY alerta
+    ADD CONSTRAINT alerta_tramite_id_fkey FOREIGN KEY (tramite_id) REFERENCES tramite(id);
 
 
 --
--- Name: empresa_cliente empresa_cliente_organizacion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: auditoria_tramite auditoria_tramite_usuario_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.empresa_cliente
-    ADD CONSTRAINT empresa_cliente_organizacion_id_fkey FOREIGN KEY (organizacion_id) REFERENCES public.organizacion(id);
-
-
---
--- Name: observacion observacion_tramite_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.observacion
-    ADD CONSTRAINT observacion_tramite_id_fkey FOREIGN KEY (tramite_id) REFERENCES public.tramite(id) ON DELETE CASCADE;
+ALTER TABLE ONLY auditoria_tramite
+    ADD CONSTRAINT auditoria_tramite_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES usuario(id);
 
 
 --
--- Name: tramite tramite_asignado_a_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: documento documento_observacion_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.tramite
-    ADD CONSTRAINT tramite_asignado_a_fkey FOREIGN KEY (asignado_a) REFERENCES public.usuario(id);
-
-
---
--- Name: tramite tramite_creado_por_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tramite
-    ADD CONSTRAINT tramite_creado_por_id_fkey FOREIGN KEY (creado_por_id) REFERENCES public.usuario(id);
+ALTER TABLE ONLY documento
+    ADD CONSTRAINT documento_observacion_id_fkey FOREIGN KEY (observacion_id) REFERENCES observacion(id) ON DELETE CASCADE;
 
 
 --
--- Name: tramite tramite_empresa_cliente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: documento documento_subido_por_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.tramite
-    ADD CONSTRAINT tramite_empresa_cliente_id_fkey FOREIGN KEY (empresa_cliente_id) REFERENCES public.empresa_cliente(id);
-
-
---
--- Name: tramite tramite_tipo_tramite_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tramite
-    ADD CONSTRAINT tramite_tipo_tramite_id_fkey FOREIGN KEY (tipo_tramite_id) REFERENCES public.tipo_tramite(id);
+ALTER TABLE ONLY documento
+    ADD CONSTRAINT documento_subido_por_id_fkey FOREIGN KEY (subido_por_id) REFERENCES usuario(id);
 
 
 --
--- Name: usuario_empresa_cliente usuario_empresa_cliente_empresa_cliente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: documento documento_tramite_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.usuario_empresa_cliente
-    ADD CONSTRAINT usuario_empresa_cliente_empresa_cliente_id_fkey FOREIGN KEY (empresa_cliente_id) REFERENCES public.empresa_cliente(id);
-
-
---
--- Name: usuario_empresa_cliente usuario_empresa_cliente_usuario_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.usuario_empresa_cliente
-    ADD CONSTRAINT usuario_empresa_cliente_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuario(id);
+ALTER TABLE ONLY documento
+    ADD CONSTRAINT documento_tramite_id_fkey FOREIGN KEY (tramite_id) REFERENCES tramite(id) ON DELETE CASCADE;
 
 
 --
--- Name: usuario usuario_organizacion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: empresa_cliente empresa_cliente_organizacion_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
 --
 
-ALTER TABLE ONLY public.usuario
-    ADD CONSTRAINT usuario_organizacion_id_fkey FOREIGN KEY (organizacion_id) REFERENCES public.organizacion(id);
+ALTER TABLE ONLY empresa_cliente
+    ADD CONSTRAINT empresa_cliente_organizacion_id_fkey FOREIGN KEY (organizacion_id) REFERENCES organizacion(id);
+
+
+--
+-- Name: observacion observacion_tramite_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY observacion
+    ADD CONSTRAINT observacion_tramite_id_fkey FOREIGN KEY (tramite_id) REFERENCES tramite(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tramite tramite_asignado_a_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY tramite
+    ADD CONSTRAINT tramite_asignado_a_fkey FOREIGN KEY (asignado_a) REFERENCES usuario(id);
+
+
+--
+-- Name: tramite tramite_creado_por_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY tramite
+    ADD CONSTRAINT tramite_creado_por_id_fkey FOREIGN KEY (creado_por_id) REFERENCES usuario(id);
+
+
+--
+-- Name: tramite tramite_empresa_cliente_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY tramite
+    ADD CONSTRAINT tramite_empresa_cliente_id_fkey FOREIGN KEY (empresa_cliente_id) REFERENCES empresa_cliente(id);
+
+
+--
+-- Name: tramite tramite_renueva_a_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY tramite
+    ADD CONSTRAINT tramite_renueva_a_id_fkey FOREIGN KEY (renueva_a_id) REFERENCES tramite(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tramite tramite_tipo_tramite_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY tramite
+    ADD CONSTRAINT tramite_tipo_tramite_id_fkey FOREIGN KEY (tipo_tramite_id) REFERENCES tipo_tramite(id);
+
+
+--
+-- Name: usuario_empresa_cliente usuario_empresa_cliente_empresa_cliente_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY usuario_empresa_cliente
+    ADD CONSTRAINT usuario_empresa_cliente_empresa_cliente_id_fkey FOREIGN KEY (empresa_cliente_id) REFERENCES empresa_cliente(id);
+
+
+--
+-- Name: usuario_empresa_cliente usuario_empresa_cliente_usuario_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY usuario_empresa_cliente
+    ADD CONSTRAINT usuario_empresa_cliente_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES usuario(id);
+
+
+--
+-- Name: usuario usuario_organizacion_id_fkey; Type: FK CONSTRAINT; Schema: t_beta_co; Owner: -
+--
+
+ALTER TABLE ONLY usuario
+    ADD CONSTRAINT usuario_organizacion_id_fkey FOREIGN KEY (organizacion_id) REFERENCES organizacion(id);
 
 
 --
